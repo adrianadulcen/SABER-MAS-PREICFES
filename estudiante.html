@@ -85,7 +85,18 @@ function matchedQuestionCount(studentAnswers, questionRows){
   });
   return matched.size;
 }
-async function cargarDatosReales(studentRow){
+async function leerTodasLasFilas(makeQuery){
+  const rows=[]; let start=0; const pageSize=900;
+  while(true){
+    const {data,error}=await makeQuery().order('id',{ascending:true}).range(start,start+pageSize-1);
+    if(error)throw error;
+    const batch=data||[]; rows.push(...batch);
+    if(batch.length<pageSize)break;
+    start+=pageSize;
+    if(start>100000)throw new Error('La consulta superó el límite de seguridad de 100.000 filas.');
+  }
+  return {data:rows,error:null};
+}async function cargarDatosReales(studentRow){
   const notice=$('#dataNotice');
   const {data:mine,error:mineError}=await supabaseClient.from('resultados_estudiante').select('id,estudiante_id,simulacro_id,curso,aciertos_totales,porcentaje_global,puntaje_global,nivel_global').eq('estudiante_id',studentRow.id);
   if(mineError)throw mineError;
@@ -93,10 +104,10 @@ async function cargarDatosReales(studentRow){
   const chosen=mine[mine.length-1];
   const [quizRes,questionRes,answerRes,cohortRes,resultRes]=await Promise.all([
     supabaseClient.from('simulacros').select('id,nombre,grado_aplicable,num_preguntas,num_sesiones').eq('id',chosen.simulacro_id).single(),
-    supabaseClient.from('preguntas').select('id,simulacro_id,numero,area,competencia,componente,respuesta_correcta,simulacro_nombre,sesion,pregunta_codigo,habilidad_evaluada,area_corta').eq('simulacro_id',chosen.simulacro_id),
-    supabaseClient.from('respuestas_estudiante').select('estudiante_id,simulacro_id,pregunta_codigo,respuesta_marcada,es_correcta').eq('simulacro_id',chosen.simulacro_id),
-    supabaseClient.from('estudiantes').select('id,institucion_id,grado,grupo').eq('institucion_id',studentRow.institucion_id).eq('grado',studentRow.grado),
-    supabaseClient.from('resultados_estudiante').select('estudiante_id,simulacro_id,curso').eq('simulacro_id',chosen.simulacro_id)
+    leerTodasLasFilas(()=>supabaseClient.from('preguntas').select('id,simulacro_id,numero,area,competencia,componente,respuesta_correcta,simulacro_nombre,sesion,pregunta_codigo,habilidad_evaluada,area_corta').eq('simulacro_id',chosen.simulacro_id)),
+    leerTodasLasFilas(()=>supabaseClient.from('respuestas_estudiante').select('id,estudiante_id,simulacro_id,pregunta_codigo,respuesta_marcada,es_correcta').eq('simulacro_id',chosen.simulacro_id)),
+    leerTodasLasFilas(()=>supabaseClient.from('estudiantes').select('id,institucion_id,grado,grupo').eq('institucion_id',studentRow.institucion_id).eq('grado',studentRow.grado)),
+    leerTodasLasFilas(()=>supabaseClient.from('resultados_estudiante').select('id,estudiante_id,simulacro_id,curso').eq('simulacro_id',chosen.simulacro_id))
   ]);
   for(const r of [quizRes,questionRes,answerRes,cohortRes,resultRes])if(r.error)throw r.error;
   simulacroReal=quizRes.data;
@@ -171,6 +182,7 @@ initEstudiante().catch(error=>{const notice=$('#dataNotice');if(notice)notice.in
 </script>
 </body>
 </html>
+
 
 
 

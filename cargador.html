@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Saber Más Preicfes · Cargador de resultados</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+:root{--ink:#172b4d;--muted:#68778d;--line:#e5eaf1;--bg:#f4f7fb;--blue:#2457d6;--blue-dark:#1741b0;--teal:#078a80;--gold:#e7a928;--red:#d95b53;--pale:#eef3ff;--green-pale:#eaf7f4}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);font:14px/1.5 Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;color:var(--ink)}
+.wrap{max-width:720px;margin:0 auto;padding:30px 20px 60px}
+.brand{display:flex;align-items:center;gap:12px;margin-bottom:24px}
+.brand img{width:44px;height:44px}
+.brand h1{font-size:18px;margin:0}
+.brand p{margin:0;color:var(--muted);font-size:13px}
+.card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:22px 24px;margin-bottom:20px;box-shadow:0 8px 24px rgba(26,47,87,.05)}
+.card h2{font-size:15px;margin:0 0 4px}
+.card p.hint{margin:0 0 16px;color:var(--muted);font-size:13px}
+label{display:block;font-size:13px;color:var(--muted);margin:0 0 6px}
+input[type=text]{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:8px;font:inherit;margin-bottom:14px}
+input[type=file]{margin-bottom:14px}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+button{padding:11px 18px;border:none;border-radius:8px;background:var(--blue);color:#fff;font:inherit;font-weight:600;cursor:pointer}
+button:hover{background:var(--blue-dark)}
+button:disabled{opacity:.5;cursor:default}
+.summary{background:var(--pale);border-radius:8px;padding:12px 14px;font-size:13px;margin-bottom:14px;display:none}
+.summary.show{display:block}
+.log{background:#0f172a;color:#d1e4ff;border-radius:10px;padding:14px 16px;font:12px/1.6 ui-monospace,Consolas,monospace;max-height:340px;overflow:auto;white-space:pre-wrap}
+.ok{color:#7bd88f}.warn{color:#ffcc66}.err{color:#ff8a80}
+a.back{color:var(--blue);font-size:13px;text-decoration:none}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="brand">
+    <img src="saber-mas-preicfes-logo.png" alt="Saber Más Preicfes">
+    <div><h1>Cargador de resultados</h1><p>Sube el Excel procesado y súbelo a la base de datos real</p></div>
+  </div>
+
+  <div class="card">
+    <h2>1 · Institución del simulacro</h2>
+    <p class="hint">Si ya existe una institución con este nombre exacto en Supabase, se usa esa. Si no, se crea nueva.</p>
+    <div class="row2">
+      <div><label for="institucion">Nombre de la institución</label><input type="text" id="institucion" value="Institución Educativa San José"></div>
+      <div><label for="ciudad">Ciudad</label><input type="text" id="ciudad" value="Guapi"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>2 · Archivo de carga</h2>
+    <p class="hint">Sube el archivo CARGA_GRADO3_DIAGNOSTICO.xlsx (u otro con el mismo formato de 4 hojas).</p>
+    <input type="file" id="fileInput" accept=".xlsx">
+    <div class="summary" id="summary"></div>
+  </div>
+
+  <div class="card">
+    <h2>3 · Subir a Supabase</h2>
+    <p class="hint">Este paso puede tardar uno o dos minutos por las 7,000+ respuestas. No cierres la pestaña mientras corre.</p>
+    <button id="btnUpload" disabled>Cargar a la base de datos</button>
+    <div style="height:14px"></div>
+    <div class="log" id="log">Esperando archivo…</div>
+  </div>
+
+  <a class="back" href="docente.html">← Volver al panel docente</a>
+</div>
+
+<script>
+const SUPABASE_URL="https://quwucaktidvlpfzzgnov.supabase.co";
+const SUPABASE_KEY="sb_publishable_yGmc235j8hupPZ5nmZ43pw_tCb86k9q";
+const supabaseClient=window.supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
+
+const logEl=document.getElementById('log');
+const summaryEl=document.getElementById('summary');
+const btnUpload=document.getElementById('btnUpload');
+let workbookData=null;
+
+function log(msg, cls){
+  const line=document.createElement('div');
+  if(cls) line.className=cls;
+  line.textContent=msg;
+  if(logEl.textContent==='Esperando archivo…') logEl.textContent='';
+  logEl.appendChild(line);
+  logEl.scrollTop=logEl.scrollHeight;
+}
+
+document.getElementById('fileInput').addEventListener('change', (e)=>{
+  const file=e.target.files[0];
+  if(!file) return;
+  const reader=new FileReader();
+  reader.onload=(ev)=>{
+    try{
+      const data=new Uint8Array(ev.target.result);
+      const wb=XLSX.read(data,{type:'array'});
+      workbookData={
+        estudiantes: XLSX.utils.sheet_to_json(wb.Sheets['ESTUDIANTES']||{}),
+        preguntas: XLSX.utils.sheet_to_json(wb.Sheets['PREGUNTAS']||{}),
+        resultados: XLSX.utils.sheet_to_json(wb.Sheets['RESULTADOS']||{}),
+        respuestas: XLSX.utils.sheet_to_json(wb.Sheets['RESPUESTAS']||{}),
+      };
+      if(!workbookData.estudiantes.length || !workbookData.preguntas.length){
+        summaryEl.classList.add('show');
+        summaryEl.textContent='No se encontraron las hojas ESTUDIANTES / PREGUNTAS esperadas en este archivo.';
+        btnUpload.disabled=true;
+        return;
+      }
+      summaryEl.classList.add('show');
+      summaryEl.textContent=`Archivo leído: ${workbookData.estudiantes.length} estudiantes · ${workbookData.preguntas.length} preguntas · ${workbookData.resultados.length} resultados · ${workbookData.respuestas.length} respuestas.`;
+      btnUpload.disabled=false;
+    }catch(err){
+      summaryEl.classList.add('show');
+      summaryEl.textContent='No se pudo leer el archivo: '+err.message;
+    }
+  };
+  reader.readAsArrayBuffer(file);
+});
+
+function chunk(arr, size){
+  const out=[];
+  for(let i=0;i<arr.length;i+=size) out.push(arr.slice(i,i+size));
+  return out;
+}
+
+async function insertChunked(table, rows, label){
+  const chunks=chunk(rows, 500);
+  let done=0;
+  for(const c of chunks){
+    const {error}=await supabaseClient.from(table).insert(c);
+    if(error){ log(`Error insertando ${label}: ${error.message}`, 'err'); throw error; }
+    done+=c.length;
+    log(`${label}: ${done}/${rows.length}…`);
+  }
+}
+
+btnUpload.addEventListener('click', async ()=>{
+  btnUpload.disabled=true;
+  try{
+    await cargarTodo();
+    log('¡Listo! Carga completa.', 'ok');
+  }catch(err){
+    log('Se detuvo la carga por un error. Revisa el mensaje anterior.', 'err');
+  }
+  btnUpload.disabled=false;
+});
+
+async function cargarTodo(){
+  const nombreInstitucion=document.getElementById('institucion').value.trim();
+  const ciudad=document.getElementById('ciudad').value.trim();
+
+  // 1) Institución: buscar o crear
+  log('Buscando institución "'+nombreInstitucion+'"…');
+  let {data:inst}=await supabaseClient.from('instituciones').select('*').ilike('nombre', nombreInstitucion).maybeSingle();
+  if(!inst){
+    const {data:nueva,error}=await supabaseClient.from('instituciones').insert({nombre:nombreInstitucion, ciudad}).select().single();
+    if(error) throw error;
+    inst=nueva;
+    log('Institución creada.', 'ok');
+  } else {
+    log('Institución existente encontrada.', 'ok');
+  }
+
+  // 2) Simulacro: buscar o crear
+  const simNombre=workbookData.preguntas[0].simulacro_nombre;
+  const grados=workbookData.estudiantes.map(e=>String(e.grado));
+  const gradoMasComun=grados.sort((a,b)=>grados.filter(v=>v===a).length-grados.filter(v=>v===b).length).pop();
+  const numSesiones=Math.max(...workbookData.preguntas.map(p=>Number(p.sesion)||1));
+
+  log('Buscando simulacro "'+simNombre+'"…');
+  let {data:sim}=await supabaseClient.from('simulacros').select('*').eq('nombre', simNombre).maybeSingle();
+  if(!sim){
+    const {data:nuevo,error}=await supabaseClient.from('simulacros').insert({
+      nombre:simNombre, grado_aplicable:gradoMasComun,
+      num_preguntas:workbookData.preguntas.length, num_sesiones:numSesiones
+    }).select().single();
+    if(error) throw error;
+    sim=nuevo;
+    log('Simulacro creado.', 'ok');
+  } else {
+    log('Simulacro existente encontrado (se reemplazarán sus preguntas/resultados/respuestas).', 'warn');
+  }
+
+  // 3) Estudiantes: upsert por código de acceso
+  const filasEstudiantes=workbookData.estudiantes.map(e=>({
+    nombre:e.nombre, codigo_acceso:String(e.codigo_acceso),
+    institucion_id:inst.id, grado:String(e.grado), grupo:String(e.curso)
+  }));
+  log('Subiendo estudiantes…');
+  const {data:estudiantesGuardados,error:errEst}=await supabaseClient
+    .from('estudiantes').upsert(filasEstudiantes,{onConflict:'codigo_acceso'}).select();
+  if(errEst) throw errEst;
+  log(`Estudiantes listos: ${estudiantesGuardados.length}.`, 'ok');
+
+  const codigoToId={};
+  estudiantesGuardados.forEach(e=>codigoToId[e.codigo_acceso]=e.id);
+  const zidToEstudianteId={};
+  workbookData.estudiantes.forEach(e=>{ zidToEstudianteId[e.zipgrade_id]=codigoToId[String(e.codigo_acceso)]; });
+
+  // 4) Preguntas: limpiar las de este simulacro y volver a insertar
+  log('Reemplazando preguntas del simulacro…');
+  await supabaseClient.from('preguntas').delete().eq('simulacro_id', sim.id);
+  const filasPreguntas=workbookData.preguntas.map(p=>({
+    simulacro_id:sim.id, numero:p.numero, area:p.area, competencia:p.competencia,
+    componente:p.componente, nivel:p.nivel, respuesta_correcta:p.respuesta_correcta,
+    simulacro_nombre:p.simulacro_nombre, sesion:p.sesion, pregunta_codigo:p.pregunta_codigo,
+    habilidad_evaluada:p.habilidad_evaluada, area_corta:p.area_corta
+  }));
+  await insertChunked('preguntas', filasPreguntas, 'Preguntas');
+
+  // 5) Resultados por estudiante: limpiar y volver a insertar
+  log('Reemplazando resultados por estudiante…');
+  await supabaseClient.from('resultados_estudiante').delete().eq('simulacro_id', sim.id);
+  const filasResultados=workbookData.resultados.map(r=>({
+    estudiante_id:zidToEstudianteId[r.zipgrade_id], simulacro_id:sim.id,
+    curso:r.curso, aciertos_totales:r.aciertos_totales, porcentaje_global:r.porcentaje_global,
+    puntaje_global:r.puntaje_global, nivel_global:r.nivel_global,
+    mat_pct:r.mat_pct, lec_pct:r.lec_pct, soc_pct:r.soc_pct, cn_pct:r.cn_pct, ing_pct:r.ing_pct,
+    nivel_mat:r.nivel_mat, nivel_lec:r.nivel_lec, nivel_soc:r.nivel_soc, nivel_cn:r.nivel_cn, nivel_ing:r.nivel_ing,
+    area_fuerte:r.area_fuerte, area_fuerte_pct:r.area_fuerte_pct,
+    area_critica:r.area_critica, area_critica_pct:r.area_critica_pct,
+    fortaleza:r.fortaleza, debilidad:r.debilidad, recomendacion:r.recomendacion,
+    clasificacion_general:r.clasificacion_general
+  })).filter(r=>r.estudiante_id);
+  await insertChunked('resultados_estudiante', filasResultados, 'Resultados');
+
+  // 6) Respuestas estudiante x pregunta: limpiar y volver a insertar
+  log('Reemplazando respuestas (esto tarda un poco más)…');
+  await supabaseClient.from('respuestas_estudiante').delete().eq('simulacro_id', sim.id);
+  const filasRespuestas=workbookData.respuestas.map(r=>({
+    estudiante_id:zidToEstudianteId[r.zipgrade_id], simulacro_id:sim.id,
+    pregunta_codigo:r.pregunta_codigo, respuesta_marcada:r.respuesta_marcada||null,
+    es_correcta:!!r.es_correcta
+  })).filter(r=>r.estudiante_id);
+  await insertChunked('respuestas_estudiante', filasRespuestas, 'Respuestas');
+}
+</script>
+</body>
+</html>

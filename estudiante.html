@@ -74,8 +74,68 @@ function canonicalArea(raw){const a=normText(raw);if(a.includes('MAT'))return ar
 function codeFor(v){return normText(v).replace(/\s/g,'')}
 function questionTotals(){const total=questions.length,correct=questions.filter(q=>q.status==='correct').length,miss=questions.filter(q=>q.status==='incorrect').length,blanks=questions.filter(q=>q.status==='blank').length,multiple=questions.filter(q=>q.status==='multiple').length;const byArea=areas.map(area=>{const qs=questions.filter(q=>q.area===area),n=qs.filter(q=>q.status==='correct').length;return {area,n,total:qs.length,pct:qs.length?Math.round(n*100/qs.length):null}}).filter(x=>x.total);const ranking=[...byArea].filter(x=>x.pct!=null).sort((a,b)=>b.pct-a.pct);return {total,correct,miss,blanks,multiple,critical:questions.filter(q=>q.status!=='correct'),byArea,bestArea:ranking[0]?.area,bestPct:ranking[0]?.pct}}
 function scoreFromAnswers(studentAnswers, questionRows){const byArea={};areas.forEach(a=>byArea[a]={right:0,total:0});questionRows.forEach(q=>{const a=canonicalArea(q.area||q.area_corta);if(byArea[a])byArea[a].total++});const qByCode=new Map();questionRows.forEach(q=>{qByCode.set(codeFor(q.pregunta_codigo),q);qByCode.set(String(qNumber(q)),q)});(studentAnswers||[]).forEach(a=>{const digits=String(a.pregunta_codigo||'').match(/\d+/),q=qByCode.get(codeFor(a.pregunta_codigo))||qByCode.get(digits?digits[0]:'');if(!q)return;const area=canonicalArea(q.area||q.area_corta);if(!byArea[area])return;const marked=codeFor(a.respuesta_marcada),key=codeFor(q.respuesta_correcta);const correct=typeof a.es_correcta==='boolean'?a.es_correcta:(String(a.es_correcta)==='1'||String(a.es_correcta).toLowerCase()==='true'||(key&&marked===key));if(correct)byArea[area].right++});const p=area=>byArea[area].total?byArea[area].right/byArea[area].total*100:0;const score=Math.round(((p(areas[0])*3+p(areas[1])*3+p(areas[2])*3+p(areas[3])*3+p(areas[4]))/13)*5);return {score,byArea}}
-async function cargarDatosReales(studentRow){const notice=$('#dataNotice');const {data:mine,error:mineError}=await supabaseClient.from('resultados_estudiante').select('id,estudiante_id,simulacro_id,curso,aciertos_totales,porcentaje_global,puntaje_global,nivel_global').eq('estudiante_id',studentRow.id);if(mineError)throw mineError;if(!mine||!mine.length){questions=[];resultadoReal=null;simulacroReal=null;puestoReal=null;cohorteReal=0;percentilReal=null;if(notice)notice.innerHTML='<b>Aún no hay resultados publicados para tu usuario.</b> Tu docente podrá asociar el simulacro cuando esté listo.';return}const chosen=mine[mine.length-1];const [quizRes,questionRes,answerRes,cohortRes,resultRes]=await Promise.all([supabaseClient.from('simulacros').select('id,nombre,grado_aplicable,num_preguntas,num_sesiones').eq('id',chosen.simulacro_id).single(),supabaseClient.from('preguntas').select('id,simulacro_id,numero,area,competencia,componente,respuesta_correcta,simulacro_nombre,sesion,pregunta_codigo,habilidad_evaluada,area_corta').eq('simulacro_id',chosen.simulacro_id),supabaseClient.from('respuestas_estudiante').select('estudiante_id,simulacro_id,pregunta_codigo,respuesta_marcada,es_correcta').eq('simulacro_id',chosen.simulacro_id),supabaseClient.from('estudiantes').select('id,institucion_id,grado,grupo').eq('institucion_id',studentRow.institucion_id).eq('grado',studentRow.grado),supabaseClient.from('resultados_estudiante').select('estudiante_id,simulacro_id,curso').eq('simulacro_id',chosen.simulacro_id)]);for(const r of [quizRes,questionRes,answerRes,cohortRes,resultRes])if(r.error)throw r.error;simulacroReal=quizRes.data;const questionRows=(questionRes.data||[]).sort((a,b)=>qNumber(a)-qNumber(b));const qMap=new Map();questionRows.forEach(q=>{qMap.set(codeFor(q.pregunta_codigo),q);qMap.set(String(qNumber(q)),q)});const ownAnswers=(answerRes.data||[]).filter(a=>a.estudiante_id===studentRow.id);questions=questionRows.map(q=>{const digits=String(q.pregunta_codigo||'').match(/\d+/),a=ownAnswers.find(x=>codeFor(x.pregunta_codigo)===codeFor(q.pregunta_codigo))||ownAnswers.find(x=>String(x.pregunta_codigo||'').match(/\d+/)?.[0]===String(qNumber(q))||digits&&x.pregunta_codigo===digits[0]);const marked=String(a?.respuesta_marcada||'').trim(),key=String(q.respuesta_correcta||'').trim();const multiple=/[A-D][,;/+|][A-D]/i.test(marked.replace(/\s/g,''))||/^[A-D]{2,}$/i.test(marked.replace(/\s/g,'')),blank=!marked||['—','-','N/A'].includes(marked.toUpperCase()),correct=!!a&&!blank&&!multiple&&(typeof a.es_correcta==='boolean'?a.es_correcta:(String(a.es_correcta)==='1'||String(a.es_correcta).toLowerCase()==='true'||normText(marked)===normText(key)));return {n:qNumber(q),area:canonicalArea(q.area||q.area_corta),competency:q.competencia||'Sin competencia',key,marked:marked||'—',status:multiple?'multiple':blank?'blank':correct?'correct':'incorrect',meta:q}});const ownScore=scoreFromAnswers(ownAnswers,questionRows);resultadoReal={...chosen,puntaje:ownScore.score};const cohortIds=(cohortRes.data||[]).filter(s=>!studentRow.grupo||String(s.grupo||'').trim()===String(studentRow.grupo||'').trim()).map(s=>s.id);const evaluatedIds=new Set((resultRes.data||[]).map(r=>r.estudiante_id).filter(id=>cohortIds.includes(id)));if(!evaluatedIds.has(studentRow.id))evaluatedIds.add(studentRow.id);const allAnswers=(answerRes.data||[]).filter(a=>evaluatedIds.has(a.estudiante_id));const scores=[];evaluatedIds.forEach(id=>scores.push({id,puntaje:scoreFromAnswers(allAnswers.filter(a=>a.estudiante_id===id),questionRows).score}));cohorteReal=scores.length;const mineScore=scores.find(x=>x.id===studentRow.id)?.puntaje??ownScore.score;puestoReal=1+scores.filter(x=>x.puntaje>mineScore).length;percentilReal=scores.length?100*scores.filter(x=>x.puntaje<=mineScore).length/scores.length:null;if(notice)notice.innerHTML=`<b>Resultados conectados:</b> ${esc(simulacroReal?.nombre||'Simulacro')} · puntaje y puesto calculados con las respuestas de tu grupo.`}
-function cerrarSesion(){sessionStorage.removeItem('estudiante');window.location.href='index.html'}
+function matchedQuestionCount(studentAnswers, questionRows){
+  const byCode=new Map();
+  questionRows.forEach(q=>{byCode.set(codeFor(q.pregunta_codigo),q);byCode.set(String(qNumber(q)),q)});
+  const matched=new Set();
+  (studentAnswers||[]).forEach(a=>{
+    const digits=String(a.pregunta_codigo||'').match(/\d+/);
+    const q=byCode.get(codeFor(a.pregunta_codigo))||byCode.get(digits?digits[0]:'');
+    if(q)matched.add(qNumber(q));
+  });
+  return matched.size;
+}
+async function cargarDatosReales(studentRow){
+  const notice=$('#dataNotice');
+  const {data:mine,error:mineError}=await supabaseClient.from('resultados_estudiante').select('id,estudiante_id,simulacro_id,curso,aciertos_totales,porcentaje_global,puntaje_global,nivel_global').eq('estudiante_id',studentRow.id);
+  if(mineError)throw mineError;
+  if(!mine||!mine.length){questions=[];resultadoReal=null;simulacroReal=null;puestoReal=null;cohorteReal=0;percentilReal=null;if(notice)notice.innerHTML='<b>Aún no hay resultados publicados para tu usuario.</b> Tu docente podrá asociar el simulacro cuando esté listo.';return}
+  const chosen=mine[mine.length-1];
+  const [quizRes,questionRes,answerRes,cohortRes,resultRes]=await Promise.all([
+    supabaseClient.from('simulacros').select('id,nombre,grado_aplicable,num_preguntas,num_sesiones').eq('id',chosen.simulacro_id).single(),
+    supabaseClient.from('preguntas').select('id,simulacro_id,numero,area,competencia,componente,respuesta_correcta,simulacro_nombre,sesion,pregunta_codigo,habilidad_evaluada,area_corta').eq('simulacro_id',chosen.simulacro_id),
+    supabaseClient.from('respuestas_estudiante').select('estudiante_id,simulacro_id,pregunta_codigo,respuesta_marcada,es_correcta').eq('simulacro_id',chosen.simulacro_id),
+    supabaseClient.from('estudiantes').select('id,institucion_id,grado,grupo').eq('institucion_id',studentRow.institucion_id).eq('grado',studentRow.grado),
+    supabaseClient.from('resultados_estudiante').select('estudiante_id,simulacro_id,curso').eq('simulacro_id',chosen.simulacro_id)
+  ]);
+  for(const r of [quizRes,questionRes,answerRes,cohortRes,resultRes])if(r.error)throw r.error;
+  simulacroReal=quizRes.data;
+  const questionRows=(questionRes.data||[]).sort((a,b)=>qNumber(a)-qNumber(b));
+  const allAnswers=answerRes.data||[];
+  const ownAnswers=allAnswers.filter(a=>a.estudiante_id===studentRow.id);
+  const ownMatched=matchedQuestionCount(ownAnswers,questionRows);
+  if(ownMatched){
+    questions=questionRows.map(q=>{
+      const digits=String(q.pregunta_codigo||'').match(/\d+/);
+      const a=ownAnswers.find(x=>codeFor(x.pregunta_codigo)===codeFor(q.pregunta_codigo))||ownAnswers.find(x=>String(x.pregunta_codigo||'').match(/\d+/)?.[0]===String(qNumber(q))||digits&&x.pregunta_codigo===digits[0]);
+      const marked=String(a?.respuesta_marcada||'').trim(),key=String(q.respuesta_correcta||'').trim();
+      const multiple=/[A-D][,;/+|][A-D]/i.test(marked.replace(/\s/g,''))||/^[A-D]{2,}$/i.test(marked.replace(/\s/g,''));
+      const blank=!marked||['—','-','N/A'].includes(marked.toUpperCase());
+      const correct=!!a&&!blank&&!multiple&&(typeof a.es_correcta==='boolean'?a.es_correcta:(String(a.es_correcta)==='1'||String(a.es_correcta).toLowerCase()==='true'||normText(marked)===normText(key)));
+      return {n:qNumber(q),area:canonicalArea(q.area||q.area_corta),competency:q.competencia||'Sin competencia',key,marked:marked||'—',status:multiple?'multiple':blank?'blank':correct?'correct':'incorrect',meta:q};
+    });
+    resultadoReal={...chosen,puntaje:scoreFromAnswers(ownAnswers,questionRows).score};
+  }else{
+    questions=[];resultadoReal=null;
+  }
+  const cohortIds=(cohortRes.data||[]).filter(s=>!studentRow.grupo||String(s.grupo||'').trim()===String(studentRow.grupo||'').trim()).map(s=>s.id);
+  const responsesByStudent=new Map();
+  allAnswers.forEach(a=>{if(!responsesByStudent.has(a.estudiante_id))responsesByStudent.set(a.estudiante_id,[]);responsesByStudent.get(a.estudiante_id).push(a)});
+  const evaluatedIds=new Set((resultRes.data||[]).map(r=>r.estudiante_id).filter(id=>cohortIds.includes(id)&&matchedQuestionCount(responsesByStudent.get(id),questionRows)>0));
+  if(ownMatched)evaluatedIds.add(studentRow.id);
+  const scores=[];
+  evaluatedIds.forEach(id=>scores.push({id,puntaje:scoreFromAnswers(responsesByStudent.get(id)||[],questionRows).score}));
+  cohorteReal=scores.length;
+  if(ownMatched){
+    const mineScore=scores.find(x=>x.id===studentRow.id)?.puntaje??resultadoReal.puntaje;
+    puestoReal=1+scores.filter(x=>x.puntaje>mineScore).length;
+    percentilReal=scores.length?100*scores.filter(x=>x.puntaje<=mineScore).length/scores.length:null;
+    if(notice)notice.innerHTML=`<b>Resultados conectados:</b> ${esc(simulacroReal?.nombre||'Simulacro')} · puesto calculado entre ${cohorteReal} estudiantes con respuestas asociadas.`;
+  }else{
+    puestoReal=null;percentilReal=null;
+    if(notice)notice.innerHTML=`<b>Simulacro encontrado, pero sin respuestas asociadas a tu cuenta.</b> El puntaje, puesto y percentil aparecerán cuando se corrija o complete la carga.`;
+  }
+}function cerrarSesion(){sessionStorage.removeItem('estudiante');window.location.href='index.html'}
 const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)];
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const pct=(a,b)=>b?Math.round(a*100/b):0;
@@ -111,4 +171,7 @@ initEstudiante().catch(error=>{const notice=$('#dataNotice');if(notice)notice.in
 </script>
 </body>
 </html>
+
+
+
 

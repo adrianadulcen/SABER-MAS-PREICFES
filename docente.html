@@ -61,7 +61,7 @@ async function cargarEstudiantesReales(){
       + '</tr>';
   }).join('');
 }
-// La carga del panel se realiza desde docente-datos.js con filtros reales.
+// La carga del panel se realiza desde docente-datos.js?v=20260927 con filtros reales.
 
 function go(id,fromPop=false){document.querySelectorAll('.section').forEach(x=>x.classList.remove('active'));if(id==='overview'){document.getElementById('dashboard').style.display='block'}else{document.getElementById('dashboard').style.display='none';document.getElementById(id).classList.add('active')}document.querySelectorAll('.nav').forEach(x=>x.classList.toggle('active',x.dataset.tab===id));document.getElementById('backtop').style.display=id==='overview'?'none':'inline-block';if(!fromPop)history.pushState({view:id},'','#'+id);window.scrollTo(0,0)}
 document.querySelectorAll('.nav[data-tab]').forEach(x=>x.addEventListener('click',()=>go(x.dataset.tab)));
@@ -69,4 +69,4 @@ function showQuestionBehavior(){const area=document.getElementById('questionArea
 function showTeacherSummary(name,score,correct,blank,multiple,best,focus){document.getElementById('tsName').textContent=name;document.getElementById('tsScore').textContent=score;const wrong=70-Number(correct)-Number(blank)-Number(multiple);document.getElementById('tsCorrect').textContent=Math.round(Number(correct)/70*100);document.getElementById('tsCorrectCount').textContent='('+correct+'/70)';document.getElementById('tsBlank').textContent=blank;document.getElementById('tsMultiple').textContent=multiple;document.getElementById('tsWrong').textContent=Math.round(wrong/70*100);document.getElementById('tsWrongCount').textContent='('+wrong+'/70)';document.getElementById('tsBest').textContent=best;document.getElementById('tsFocus').textContent=focus;document.getElementById('teacherSummary').classList.add('show');history.pushState({view:'roster',modal:true},'','#resumen-estudiante')}function hideTeacherSummary(){document.getElementById('teacherSummary').classList.remove('show');if(location.hash==='#resumen-estudiante')history.back()}
 window.addEventListener('popstate',e=>{document.getElementById('teacherSummary').classList.remove('show');go((e.state&&e.state.view)||'overview',true)});
 
-</script><script src="docente-datos.js"></script></body></html>
+</script><script src="docente-datos.js?v=20260927"></script></body></html>

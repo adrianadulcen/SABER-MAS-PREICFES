@@ -10,7 +10,13 @@
 @media(max-width:720px){.app{display:block}.sidebar{position:fixed;left:-270px;z-index:8;width:250px;transition:left .2s;box-shadow:var(--shadow)}.sidebar.open{left:0}.mobile-toggle{display:inline-flex;border:1px solid var(--line);background:white;border-radius:8px;padding:7px 10px;color:var(--blue)}.topbar{height:60px;padding:0 12px}.crumb{display:none}.top-right{gap:7px}.demo-select{max-width:146px;padding:7px;font-size:10px}.user-chip span{display:none}.content{padding:20px 13px 35px}.page-head{display:block}.page-head h1{font-size:23px}.page-head .filters{margin-top:12px}.filters{flex-wrap:wrap}.hero{align-items:flex-start;padding:16px}.hero-meta{max-width:135px;font-size:10px}.kpis{gap:9px}.card{padding:14px}.metric-value{font-size:23px}.cols{gap:10px}.area-row{grid-template-columns:minmax(100px,1fr) minmax(70px,1.2fr) 36px;gap:8px}.resource-grid{grid-template-columns:1fr}.form-grid{grid-template-columns:1fr}.table-head{padding:14px;display:block}.table-tools{margin-top:10px}.critical-item{grid-template-columns:37px minmax(0,1fr)}.critical-item .button{grid-column:2;justify-self:start}.pdf-viewer{height:400px}}
 </style>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-</head>
+<style id="visual-polish">
+:root{--ink:#15294b;--muted:#65758d;--line:#e3eaf4;--bg:#f5f8fd;--blue:#2457d6;--blue-dark:#1741b0;--teal:#078a80;--shadow-soft:0 12px 32px rgba(25,48,91,.07)}
+html{scroll-behavior:smooth}body{letter-spacing:.005em;-webkit-font-smoothing:antialiased}h1,h2,h3{letter-spacing:-.025em}button,input,select,a{transition:background-color .18s ease,border-color .18s ease,box-shadow .18s ease,transform .18s ease}button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid #b8ccff;outline-offset:2px}button:not(:disabled):hover{filter:brightness(.98)}
+.card,.modal,.hero,.brand img{box-shadow:var(--shadow-soft)}.card{border-radius:16px}.nav{transition:background .18s ease,color .18s ease,transform .18s ease}.nav:hover{transform:translateX(2px)}
+@media(max-width:720px){.page-head{gap:12px}.page-head h1{line-height:1.12}.sub{line-height:1.55}.filters>*{min-width:0;max-width:100%}.card-head{gap:10px}.card-head h2,.table-head h2{line-height:1.3}.table-wrap{-webkit-overflow-scrolling:touch}.hero{border-radius:13px}.toast{left:12px;right:12px;bottom:12px;text-align:center}}
+@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}*,*::before,*::after{transition:none!important;animation:none!important}}
+</style></head>
 <body>
 <div class="app">
   <aside class="sidebar" id="sidebar">

@@ -38,7 +38,12 @@
     ]);
     state.institutions = data[0]; state.students = data[1]; state.quizzes = data[2]; state.results = data[3]; state.questions = data[4]; state.answers = data[5];
     if (!state.students.length) throw new Error('No hay estudiantes cargados.');
-    state.institution = (state.institutions.find(function (i) { return state.students.some(function (s) { return s.institucion_id === i.id; }); }) || {}).id || state.students[0].institucion_id;
+    var sesionUsuario = window.__sesionUsuario;
+    if (sesionUsuario && sesionUsuario.rol === 'docente') {
+      state.institution = sesionUsuario.institucion_id;
+    } else {
+      state.institution = (state.institutions.find(function (i) { return state.students.some(function (s) { return s.institucion_id === i.id; }); }) || {}).id || state.students[0].institucion_id;
+    }
     var grades = gradesForInstitution(); state.grade = grades.indexOf('3') >= 0 ? '3' : (grades[0] || '');
     state.group = groupsForGrade().indexOf('3-01') >= 0 ? '3-01' : 'all';
     state.quiz = quizzesForGrade()[0]?.id || state.quizzes[0]?.id || '';
@@ -87,7 +92,15 @@
   function badge(value) { return value < 30 ? '<span class="pill red">Refuerzo prioritario</span>' : value < 50 ? '<span class="pill yellow">En desarrollo</span>' : '<span class="pill green">Fortaleza relativa</span>'; }
   function filters() {
     var inst = $('#filterInstitution'), grade = $('#filterGrade'), group = $('#filterGroup'), quiz = $('#filterSimulacro');
-    if (inst) { inst.innerHTML = state.institutions.filter(function (i) { return state.students.some(function (s) { return s.institucion_id === i.id; }); }).map(function (i) { return '<option value="' + esc(i.id) + '">' + esc(i.nombre) + '</option>'; }).join(''); inst.value = state.institution; }
+    if (inst) {
+      var esDocente = window.__sesionUsuario && window.__sesionUsuario.rol === 'docente';
+      var allowed = esDocente
+        ? state.institutions.filter(function (i) { return i.id === window.__sesionUsuario.institucion_id; })
+        : state.institutions.filter(function (i) { return state.students.some(function (s) { return s.institucion_id === i.id; }); });
+      inst.innerHTML = allowed.map(function (i) { return '<option value="' + esc(i.id) + '">' + esc(i.nombre) + '</option>'; }).join('');
+      inst.value = state.institution;
+      inst.disabled = !!esDocente;
+    }
     if (grade) { grade.innerHTML = gradesForInstitution().map(function (g) { return '<option value="' + esc(g) + '">Grado ' + esc(g) + '</option>'; }).join(''); grade.value = state.grade; }
     if (group) { group.innerHTML = '<option value="all">Todos los grupos</option>' + groupsForGrade().map(function (g) { return '<option value="' + esc(g) + '">' + esc(g) + '</option>'; }).join(''); group.value = state.group; }
     if (quiz) { var list = quizzesForGrade(); quiz.innerHTML = list.map(function (q) { return '<option value="' + esc(q.id) + '">' + esc(q.nombre) + '</option>'; }).join('') || '<option value="">Sin simulacro para este grado</option>'; if (!list.some(function (q) { return q.id === state.quiz; })) state.quiz = list[0]?.id || ''; quiz.value = state.quiz; }
@@ -96,7 +109,9 @@
     var box = $('#dashboard .titlebar .filters'); if (!box) return;
     box.innerHTML = '<select id="filterInstitution" aria-label="Institución"></select><select id="filterGrade" aria-label="Grado"></select><select id="filterGroup" aria-label="Grupo"></select><select id="filterSimulacro" aria-label="Simulacro"></select><button class="outline" type="button" id="openRoster">♙ Ver estudiantes</button>';
     filters();
-    $('#filterInstitution').onchange = function (e) { state.institution = e.target.value; var gs = gradesForInstitution(); state.grade = gs.indexOf('3') >= 0 ? '3' : (gs[0] || ''); state.group = 'all'; state.quiz = quizzesForGrade()[0]?.id || ''; render(); };
+    if (!(window.__sesionUsuario && window.__sesionUsuario.rol === 'docente')) {
+      $('#filterInstitution').onchange = function (e) { state.institution = e.target.value; var gs = gradesForInstitution(); state.grade = gs.indexOf('3') >= 0 ? '3' : (gs[0] || ''); state.group = 'all'; state.quiz = quizzesForGrade()[0]?.id || ''; render(); };
+    }
     $('#filterGrade').onchange = function (e) { state.grade = e.target.value; state.group = 'all'; state.quiz = quizzesForGrade()[0]?.id || ''; render(); };
     $('#filterGroup').onchange = function (e) { state.group = e.target.value; render(); };
     $('#filterSimulacro').onchange = function (e) { state.quiz = e.target.value; render(); };
@@ -107,6 +122,10 @@
     var best = c.areas[0], focus = c.areas[c.areas.length - 1], easy = c.qstats.slice().sort(function (a, b) { return b.pct - a.pct; })[0], hard = c.qstats.slice().sort(function (a, b) { return a.pct - b.pct; })[0];
     var avg = c.results.length ? c.results.reduce(function (s, r) { return s + num(r.puntaje_global); }, 0) / c.results.length : 0, overall = c.total && c.evaluated.size ? c.qstats.reduce(function (s, q) { return s + q.correct; }, 0) / (c.total * c.evaluated.size) * 100 : 0;
     var school = state.institutions.find(function (i) { return i.id === state.institution; });
+    var sesionUsuario = window.__sesionUsuario, crumbEl = $('#headerCrumb'), avatarEl = $('#headerAvatar'), nameEl = $('#headerName');
+    if (crumbEl) crumbEl.textContent = (school && school.nombre || 'Institución') + ' / Panel ' + (sesionUsuario && sesionUsuario.rol === 'administrador' ? 'administrador' : 'docente');
+    if (avatarEl && sesionUsuario) avatarEl.textContent = sesionUsuario.nombre.split(' ').map(function (x) { return x[0]; }).join('').slice(0, 2).toUpperCase();
+    if (nameEl && sesionUsuario) nameEl.textContent = sesionUsuario.nombre + ' · ' + (sesionUsuario.rol === 'administrador' ? 'Administrador' : 'Docente');
     $('#dashboard').innerHTML = '<div class="titlebar"><div><div class="sim-name">' + esc(c.quiz?.nombre || 'SIMULACRO') + ' · GRADO ' + esc(state.grade) + '</div><h1>Resumen del grupo</h1><div class="sub">Resultados calculados desde las respuestas registradas.</div></div><div class="filters"></div></div>' +
       '<div class="grid kpis"><div class="card"><div class="kpihead">Estudiantes evaluados</div><div class="value">' + itxt(c.evaluated.size) + ' <small> / ' + itxt(c.students.length) + '</small></div><div class="hint">' + ptxt(c.students.length ? c.evaluated.size / c.students.length * 100 : 0) + ' de participación</div></div><div class="card"><div class="kpihead">Puntaje promedio del grupo</div><div class="value">' + itxt(avg) + '</div><div class="hint">Según los resultados cargados</div></div><div class="card"><div class="kpihead">Porcentaje de acierto</div><div class="value">' + ptxt(overall) + '</div><div class="hint">' + itxt(c.total) + ' preguntas · todas las áreas</div></div><div class="card"><div class="kpihead">Área de mayor acierto</div><div class="value" style="font-size:20px">' + esc(best?.area || '—') + '</div><div class="hint">' + (best ? ptxt(best.pct) : 'Sin datos') + '</div></div></div>' +
       '<div class="grid middle"><div class="card"><div class="cardtitle"><div><h2>Porcentaje de acierto por área</h2><p>Se calcula con aciertos sobre preguntas aplicadas al grupo.</p></div><span class="badge">' + esc(state.group === 'all' ? 'Todos los grupos' : state.group) + '</span></div><div class="bars">' + (c.areas.map(function (a) { return bar(a.area, a.pct); }).join('') || '<p>No hay información por área.</p>') + '</div><div class="insight"><b>Área para priorizar</b>' + (focus ? esc(focus.area) + ' presenta el menor porcentaje de acierto (' + ptxt(focus.pct) + ').' : 'Sin datos suficientes.') + '</div></div>' +

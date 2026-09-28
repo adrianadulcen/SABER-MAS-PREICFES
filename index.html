@@ -38,17 +38,17 @@ html{min-height:100%;background:radial-gradient(ellipse at 12% 12%,rgba(52,112,2
   <div class="brand">
     <img src="saber-mas-preicfes-logo.png" alt="Saber Más Preicfes">
     <h1>Saber Más Preicfes</h1>
-    <p>Ingresa con tu código de acceso</p>
+    <p>Ingresa con tu usuario y contraseña</p>
   </div>
   <div class="error" id="errorBox"></div>
   <form id="loginForm">
-    <label for="codigo">Código de acceso (estudiante)</label>
-    <input id="codigo" placeholder="Ej: EST001" autocomplete="off" autofocus>
+    <label for="usuario">Usuario o código de acceso</label>
+    <input id="usuario" placeholder="Tu código o usuario" autocomplete="off" autofocus>
+    <label for="clave">Contraseña</label>
+    <input id="clave" type="password" placeholder="Tu contraseña o el mismo código" autocomplete="off">
     <button type="submit" id="submitBtn">Ingresar</button>
   </form>
-  <div class="divider">o</div>
-  <button class="secondary" onclick="window.location.href='docente.html'">Soy docente o administrador</button>
-  <p class="note">El acceso de docentes y administradores con correo y contraseña se activará en la siguiente etapa.</p>
+  <p class="note">¿Eres estudiante? Usa tu código de acceso como usuario y también como contraseña.</p>
 </div>
 <script>
 const SUPABASE_URL="https://quwucaktidvlpfzzgnov.supabase.co";
@@ -61,28 +61,45 @@ const submitBtn=document.getElementById('submitBtn');
 form.addEventListener('submit', async (e)=>{
   e.preventDefault();
   errorBox.classList.remove('show');
-  const codigo=document.getElementById('codigo').value.trim();
-  if(!codigo){
-    errorBox.textContent='Escribe tu código de acceso.';
+  const usuario=document.getElementById('usuario').value.trim();
+  const clave=document.getElementById('clave').value.trim();
+  if(!usuario || !clave){
+    errorBox.textContent='Escribe tu usuario y tu contraseña.';
     errorBox.classList.add('show');
     return;
   }
   submitBtn.disabled=true;
   submitBtn.textContent='Verificando…';
-  const {data,error}=await supabaseClient
-    .from('estudiantes')
-    .select('*')
-    .eq('codigo_acceso', codigo)
-    .single();
-  submitBtn.disabled=false;
-  submitBtn.textContent='Ingresar';
-  if(error || !data){
-    errorBox.textContent='Código no válido. Verifica con tu docente.';
+  try{
+    const {data:userRow, error:userErr}=await supabaseClient
+      .from('usuarios').select('*')
+      .eq('usuario', usuario).eq('password', clave).eq('activo', true)
+      .maybeSingle();
+    if(userErr) throw userErr;
+    if(userRow){
+      delete userRow.password;
+      sessionStorage.setItem('usuario', JSON.stringify(userRow));
+      window.location.href = userRow.rol==='administrador' ? 'admin.html' : 'docente.html';
+      return;
+    }
+    const {data:estRow, error:estErr}=await supabaseClient
+      .from('estudiantes').select('*').eq('codigo_acceso', usuario).maybeSingle();
+    if(estErr) throw estErr;
+    if(estRow && clave===estRow.codigo_acceso){
+      sessionStorage.setItem('estudiante', JSON.stringify(estRow));
+      window.location.href='estudiante.html';
+      return;
+    }
+    errorBox.textContent='Usuario o contraseña incorrectos. Verifica con tu institución.';
     errorBox.classList.add('show');
-    return;
+  }catch(err){
+    console.error(err);
+    errorBox.textContent='No se pudo verificar el acceso. Intenta de nuevo.';
+    errorBox.classList.add('show');
+  }finally{
+    submitBtn.disabled=false;
+    submitBtn.textContent='Ingresar';
   }
-  sessionStorage.setItem('estudiante', JSON.stringify(data));
-  window.location.href='estudiante.html';
 });
 </script>
 </body>

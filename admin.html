@@ -1,0 +1,481 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Saber Más Preicfes · Panel administrador</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+:root{--ink:#172b4d;--muted:#68778d;--line:#e5eaf1;--bg:#f4f7fb;--blue:#2457d6;--blue-dark:#1741b0;--teal:#078a80;--gold:#e7a928;--red:#d95b53;--pale:#eef3ff;--green-pale:#eaf7f4}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);font:14px/1.5 Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;color:var(--ink)}
+button,select,input{font:inherit}
+.top{height:64px;background:#fff;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;padding:0 26px}
+.brand{display:flex;align-items:center;gap:11px}
+.brand img{width:34px;height:34px}
+.brand b{font-size:14px}
+.brand small{display:block;color:var(--muted);font-size:11px}
+.user{display:flex;align-items:center;gap:10px;font-weight:600;font-size:13px}
+.wrap{max-width:1080px;margin:0 auto;padding:26px 20px 60px}
+.tabs{display:flex;gap:6px;margin-bottom:20px;flex-wrap:wrap}
+.tab{border:1px solid var(--line);background:#fff;border-radius:9px;padding:10px 15px;cursor:pointer;font-weight:600;color:var(--muted);font-size:13px}
+.tab.active{background:var(--pale);color:var(--blue);border-color:var(--pale)}
+.panel{display:none}
+.panel.active{display:block}
+.card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:22px 24px;margin-bottom:20px;box-shadow:0 8px 24px rgba(26,47,87,.05)}
+.card h2{font-size:15px;margin:0 0 4px}
+.card p.hint{margin:0 0 16px;color:var(--muted);font-size:13px}
+label{display:block;font-size:13px;color:var(--muted);margin:0 0 6px}
+input[type=text],input[type=password],select{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:8px;font:inherit;margin-bottom:14px;background:#fff}
+input[type=file]{margin-bottom:14px}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px}
+button{padding:11px 18px;border:none;border-radius:8px;background:var(--blue);color:#fff;font-weight:600;cursor:pointer}
+button:hover{background:var(--blue-dark)}
+button:disabled{opacity:.5;cursor:default}
+button.outline{background:#fff;color:var(--blue);border:1px solid var(--line)}
+button.outline:hover{background:var(--pale)}
+.summary{background:var(--pale);border-radius:8px;padding:12px 14px;font-size:13px;margin-bottom:14px;display:none}
+.summary.show{display:block}
+.log{background:#0f172a;color:#d1e4ff;border-radius:10px;padding:14px 16px;font:12px/1.6 ui-monospace,Consolas,monospace;max-height:340px;overflow:auto;white-space:pre-wrap}
+.ok{color:#7bd88f}.warn{color:#ffcc66}.err{color:#ff8a80}
+table{border-collapse:collapse;width:100%}
+th{text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:#8692a3;padding:10px;border-bottom:1px solid var(--line)}
+td{padding:11px 10px;border-bottom:1px solid #f0f2f6;font-size:13px}
+.link{border:0;background:none;color:var(--blue);font-weight:700;cursor:pointer;padding:0}
+.error{background:#fff0ef;color:var(--red);border-radius:8px;padding:9px 12px;font-size:13px;margin-bottom:14px;display:none}
+.error.show{display:block}
+</style>
+</head>
+<body>
+<script>
+(function(){
+  var sesion = JSON.parse(sessionStorage.getItem('usuario')||'null');
+  if (!sesion || sesion.rol !== 'administrador') {
+    window.location.href = (sesion && sesion.rol==='docente') ? 'docente.html' : 'index.html';
+  }
+  window.__sesionUsuario = sesion;
+})();
+</script>
+<header class="top">
+  <div class="brand"><img src="saber-mas-preicfes-logo.png" alt="Saber Más Preicfes"><div><b>SABER MÁS PREICFES</b><small>Panel administrador</small></div></div>
+  <div class="user"><button class="outline" onclick="cerrarSesion()">Cerrar sesión</button><span id="adminName">Administrador</span></div>
+</header>
+<div class="wrap">
+  <div class="tabs">
+    <div class="tab active" data-tab="instituciones">Instituciones</div>
+    <div class="tab" data-tab="carga">Simulacros y resultados</div>
+    <div class="tab" data-tab="estudiantes">Estudiantes</div>
+    <div class="tab" data-tab="usuarios">Usuarios</div>
+  </div>
+
+  <!-- INSTITUCIONES -->
+  <section class="panel active" id="panel-instituciones">
+    <div class="card">
+      <h2>Instituciones registradas</h2>
+      <p class="hint">Cada institución agrupa sus propios estudiantes, simulacros y resultados.</p>
+      <div class="tablewrap"><table><thead><tr><th>Nombre</th><th>Ciudad</th><th>Estudiantes</th><th></th></tr></thead><tbody id="institucionesBody"></tbody></table></div>
+    </div>
+    <div class="card">
+      <h2 id="institucionFormTitle">Crear institución</h2>
+      <p class="hint">Si el nombre ya existe (coincidencia exacta o similar), se actualiza en vez de duplicarse.</p>
+      <div class="error" id="institucionError"></div>
+      <input type="hidden" id="institucionId">
+      <div class="row2">
+        <div><label for="institucionNombre">Nombre</label><input type="text" id="institucionNombre" placeholder="Ej: Institución Educativa San José"></div>
+        <div><label for="institucionCiudad">Ciudad</label><input type="text" id="institucionCiudad" placeholder="Ej: Guapi"></div>
+      </div>
+      <button id="btnGuardarInstitucion">Guardar institución</button>
+      <button class="outline" id="btnCancelarInstitucion" style="display:none;margin-left:8px">Cancelar edición</button>
+    </div>
+  </section>
+
+  <!-- CARGA MASIVA (reutiliza la lógica probada de cargador.html) -->
+  <section class="panel" id="panel-carga">
+    <div class="card">
+      <h2>1 · Institución del simulacro</h2>
+      <p class="hint">Si ya existe una institución con este nombre exacto en Supabase, se usa esa. Si no, se crea nueva.</p>
+      <div class="row2">
+        <div><label for="institucion">Nombre de la institución</label><input type="text" id="institucion" value="Institución Educativa San José"></div>
+        <div><label for="ciudad">Ciudad</label><input type="text" id="ciudad" value="Guapi"></div>
+      </div>
+    </div>
+    <div class="card">
+      <h2>2 · Archivo de carga</h2>
+      <p class="hint">Sube el archivo con el formato de 4 hojas: ESTUDIANTES, PREGUNTAS, RESULTADOS, RESPUESTAS.</p>
+      <input type="file" id="fileInput" accept=".xlsx">
+      <div class="summary" id="summary"></div>
+    </div>
+    <div class="card">
+      <h2>3 · Subir a Supabase</h2>
+      <p class="hint">Este paso puede tardar uno o dos minutos por las respuestas. No cierres la pestaña mientras corre.</p>
+      <button id="btnUpload" disabled>Cargar a la base de datos</button>
+      <div style="height:14px"></div>
+      <div class="log" id="log">Esperando archivo…</div>
+    </div>
+  </section>
+
+  <!-- ESTUDIANTES -->
+  <section class="panel" id="panel-estudiantes">
+    <div class="card">
+      <h2>Dar de alta un estudiante</h2>
+      <p class="hint">Para cargas masivas usa la pestaña "Simulacros y resultados". Aquí puedes agregar un estudiante individual (ej. uno que llegó después del simulacro).</p>
+      <div class="error" id="estudianteError"></div>
+      <div class="summary" id="estudianteSummary"></div>
+      <div class="row2">
+        <div><label for="estInstitucion">Institución</label><select id="estInstitucion"></select></div>
+        <div><label for="estNombre">Nombre completo</label><input type="text" id="estNombre" placeholder="Ej: Juan Pérez"></div>
+      </div>
+      <div class="row3">
+        <div><label for="estGrado">Grado</label><input type="text" id="estGrado" placeholder="Ej: 3"></div>
+        <div><label for="estGrupo">Grupo / curso</label><input type="text" id="estGrupo" placeholder="Ej: 3-01"></div>
+        <div><label for="estCodigo">Código de acceso</label><input type="text" id="estCodigo" placeholder="Ej: G3-501"></div>
+      </div>
+      <button id="btnGuardarEstudiante">Guardar estudiante</button>
+    </div>
+  </section>
+
+  <!-- USUARIOS -->
+  <section class="panel" id="panel-usuarios">
+    <div class="card">
+      <h2>Usuarios docente / administrador</h2>
+      <p class="hint">Los estudiantes no necesitan usuario: ingresan con su código de acceso.</p>
+      <div class="tablewrap"><table><thead><tr><th>Nombre</th><th>Usuario</th><th>Rol</th><th>Institución</th></tr></thead><tbody id="usuariosBody"></tbody></table></div>
+    </div>
+    <div class="card">
+      <h2>Crear usuario</h2>
+      <div class="error" id="usuarioError"></div>
+      <div class="summary" id="usuarioSummary"></div>
+      <div class="row2">
+        <div><label for="usrNombre">Nombre completo</label><input type="text" id="usrNombre" placeholder="Ej: María Pérez"></div>
+        <div><label for="usrUsuario">Usuario</label><input type="text" id="usrUsuario" placeholder="Ej: docente.sanjose"></div>
+      </div>
+      <div class="row3">
+        <div><label for="usrPassword">Contraseña</label><input type="text" id="usrPassword" placeholder="Ej: SaberMas2026"></div>
+        <div><label for="usrRol">Rol</label><select id="usrRol"><option value="docente">Docente</option><option value="administrador">Administrador</option></select></div>
+        <div id="usrInstitucionWrap"><label for="usrInstitucion">Institución asignada</label><select id="usrInstitucion"></select></div>
+      </div>
+      <button id="btnGuardarUsuario">Crear usuario</button>
+    </div>
+  </section>
+</div>
+
+<script>
+const SUPABASE_URL="https://quwucaktidvlpfzzgnov.supabase.co";
+const SUPABASE_KEY="sb_publishable_yGmc235j8hupPZ5nmZ43pw_tCb86k9q";
+const supabaseClient=window.supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
+
+document.getElementById('adminName').textContent = (window.__sesionUsuario && window.__sesionUsuario.nombre) ? window.__sesionUsuario.nombre + ' · Administrador' : 'Administrador';
+function cerrarSesion(){ sessionStorage.removeItem('usuario'); window.location.href='index.html'; }
+
+// ---------- Tabs ----------
+document.querySelectorAll('.tab').forEach(function(tab){
+  tab.addEventListener('click', function(){
+    document.querySelectorAll('.tab').forEach(function(t){ t.classList.remove('active'); });
+    document.querySelectorAll('.panel').forEach(function(p){ p.classList.remove('active'); });
+    tab.classList.add('active');
+    document.getElementById('panel-'+tab.dataset.tab).classList.add('active');
+  });
+});
+
+let institucionesCache = [];
+
+async function cargarInstituciones(){
+  const {data, error} = await supabaseClient.from('instituciones').select('id,nombre,ciudad').order('nombre');
+  if(error){ console.error(error); return; }
+  institucionesCache = data || [];
+  renderInstituciones();
+  renderSelectsInstitucion();
+}
+
+async function renderInstituciones(){
+  const {data:estudiantes} = await supabaseClient.from('estudiantes').select('institucion_id');
+  const conteo = {};
+  (estudiantes||[]).forEach(function(e){ conteo[e.institucion_id] = (conteo[e.institucion_id]||0)+1; });
+  document.getElementById('institucionesBody').innerHTML = institucionesCache.map(function(i){
+    return '<tr><td><b>'+esc(i.nombre)+'</b></td><td>'+esc(i.ciudad||'—')+'</td><td>'+(conteo[i.id]||0)+'</td>'+
+      '<td><button class="link" data-editar-institucion="'+esc(i.id)+'">Editar</button></td></tr>';
+  }).join('') || '<tr><td colspan="4">Aún no hay instituciones registradas.</td></tr>';
+  document.querySelectorAll('[data-editar-institucion]').forEach(function(btn){
+    btn.onclick = function(){
+      const inst = institucionesCache.find(function(i){ return i.id===btn.dataset.editarInstitucion; });
+      if(!inst) return;
+      document.getElementById('institucionId').value = inst.id;
+      document.getElementById('institucionNombre').value = inst.nombre;
+      document.getElementById('institucionCiudad').value = inst.ciudad||'';
+      document.getElementById('institucionFormTitle').textContent = 'Editar institución';
+      document.getElementById('btnCancelarInstitucion').style.display='inline-block';
+      window.scrollTo(0, document.getElementById('institucionFormTitle').offsetTop);
+    };
+  });
+}
+
+function renderSelectsInstitucion(){
+  const opciones = institucionesCache.map(function(i){ return '<option value="'+esc(i.id)+'">'+esc(i.nombre)+'</option>'; }).join('');
+  document.getElementById('estInstitucion').innerHTML = opciones || '<option value="">Crea una institución primero</option>';
+  document.getElementById('usrInstitucion').innerHTML = opciones || '<option value="">Crea una institución primero</option>';
+}
+
+document.getElementById('btnCancelarInstitucion').onclick = function(){
+  document.getElementById('institucionId').value = '';
+  document.getElementById('institucionNombre').value = '';
+  document.getElementById('institucionCiudad').value = '';
+  document.getElementById('institucionFormTitle').textContent = 'Crear institución';
+  document.getElementById('btnCancelarInstitucion').style.display='none';
+};
+
+document.getElementById('btnGuardarInstitucion').onclick = async function(){
+  const errBox = document.getElementById('institucionError'); errBox.classList.remove('show');
+  const id = document.getElementById('institucionId').value.trim();
+  const nombre = document.getElementById('institucionNombre').value.trim();
+  const ciudad = document.getElementById('institucionCiudad').value.trim();
+  if(!nombre){ errBox.textContent='Escribe el nombre de la institución.'; errBox.classList.add('show'); return; }
+  try{
+    if(id){
+      const {error} = await supabaseClient.from('instituciones').update({nombre, ciudad}).eq('id', id);
+      if(error) throw error;
+    } else {
+      const {data:existente} = await supabaseClient.from('instituciones').select('*').ilike('nombre', nombre).maybeSingle();
+      if(existente){
+        const {error} = await supabaseClient.from('instituciones').update({ciudad}).eq('id', existente.id);
+        if(error) throw error;
+      } else {
+        const {error} = await supabaseClient.from('instituciones').insert({nombre, ciudad});
+        if(error) throw error;
+      }
+    }
+    document.getElementById('btnCancelarInstitucion').onclick();
+    await cargarInstituciones();
+  }catch(err){
+    errBox.textContent = 'No se pudo guardar: '+err.message; errBox.classList.add('show');
+  }
+};
+
+// ---------- Estudiantes ----------
+document.getElementById('btnGuardarEstudiante').onclick = async function(){
+  const errBox = document.getElementById('estudianteError'), okBox = document.getElementById('estudianteSummary');
+  errBox.classList.remove('show'); okBox.classList.remove('show');
+  const institucion_id = document.getElementById('estInstitucion').value;
+  const nombre = document.getElementById('estNombre').value.trim();
+  const grado = document.getElementById('estGrado').value.trim();
+  const grupo = document.getElementById('estGrupo').value.trim();
+  const codigo_acceso = document.getElementById('estCodigo').value.trim();
+  if(!institucion_id || !nombre || !grado || !codigo_acceso){
+    errBox.textContent='Completa institución, nombre, grado y código de acceso.'; errBox.classList.add('show'); return;
+  }
+  try{
+    const {data:existente} = await supabaseClient.from('estudiantes').select('id').eq('codigo_acceso', codigo_acceso).maybeSingle();
+    if(existente){ errBox.textContent='Ya existe un estudiante con ese código de acceso.'; errBox.classList.add('show'); return; }
+    const {error} = await supabaseClient.from('estudiantes').insert({nombre, grado, grupo, codigo_acceso, institucion_id});
+    if(error) throw error;
+    okBox.textContent = 'Estudiante creado. Ya puede ingresar con el código '+codigo_acceso+' (usuario y contraseña son el mismo código).';
+    okBox.classList.add('show');
+    document.getElementById('estNombre').value=''; document.getElementById('estGrado').value=''; document.getElementById('estGrupo').value=''; document.getElementById('estCodigo').value='';
+    renderInstituciones();
+  }catch(err){
+    errBox.textContent = 'No se pudo guardar: '+err.message; errBox.classList.add('show');
+  }
+};
+
+// ---------- Usuarios ----------
+async function cargarUsuarios(){
+  const {data, error} = await supabaseClient.from('usuarios').select('nombre,usuario,rol,institucion_id').order('nombre');
+  if(error){ console.error(error); return; }
+  document.getElementById('usuariosBody').innerHTML = (data||[]).map(function(u){
+    const inst = institucionesCache.find(function(i){ return i.id===u.institucion_id; });
+    return '<tr><td>'+esc(u.nombre)+'</td><td>'+esc(u.usuario)+'</td><td>'+esc(u.rol)+'</td><td>'+esc(inst?inst.nombre:'Todas')+'</td></tr>';
+  }).join('') || '<tr><td colspan="4">Aún no hay usuarios registrados.</td></tr>';
+}
+
+document.getElementById('usrRol').addEventListener('change', function(e){
+  document.getElementById('usrInstitucionWrap').style.display = e.target.value==='docente' ? '' : 'none';
+});
+
+document.getElementById('btnGuardarUsuario').onclick = async function(){
+  const errBox = document.getElementById('usuarioError'), okBox = document.getElementById('usuarioSummary');
+  errBox.classList.remove('show'); okBox.classList.remove('show');
+  const nombre = document.getElementById('usrNombre').value.trim();
+  const usuario = document.getElementById('usrUsuario').value.trim();
+  const password = document.getElementById('usrPassword').value.trim();
+  const rol = document.getElementById('usrRol').value;
+  const institucion_id = rol==='docente' ? (document.getElementById('usrInstitucion').value || null) : null;
+  if(!nombre || !usuario || !password || (rol==='docente' && !institucion_id)){
+    errBox.textContent='Completa nombre, usuario, contraseña y, si es docente, su institución.'; errBox.classList.add('show'); return;
+  }
+  try{
+    const {error} = await supabaseClient.from('usuarios').insert({nombre, usuario, password, rol, institucion_id});
+    if(error) throw error;
+    okBox.textContent = 'Usuario creado. Ya puede ingresar con usuario "'+usuario+'".';
+    okBox.classList.add('show');
+    document.getElementById('usrNombre').value=''; document.getElementById('usrUsuario').value=''; document.getElementById('usrPassword').value='';
+    cargarUsuarios();
+  }catch(err){
+    errBox.textContent = 'No se pudo guardar: '+err.message; errBox.classList.add('show');
+  }
+};
+
+function esc(v){ return String(v==null?'':v).replace(/[&<>"']/g, function(c){ return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]; }); }
+
+// ---------- Carga masiva (idéntica a cargador.html) ----------
+const logEl=document.getElementById('log');
+const summaryEl=document.getElementById('summary');
+const btnUpload=document.getElementById('btnUpload');
+let workbookData=null;
+
+function log(msg, cls){
+  const line=document.createElement('div');
+  if(cls) line.className=cls;
+  line.textContent=msg;
+  if(logEl.textContent==='Esperando archivo…') logEl.textContent='';
+  logEl.appendChild(line);
+  logEl.scrollTop=logEl.scrollHeight;
+}
+
+document.getElementById('fileInput').addEventListener('change', (e)=>{
+  const file=e.target.files[0];
+  if(!file) return;
+  const reader=new FileReader();
+  reader.onload=(ev)=>{
+    try{
+      const data=new Uint8Array(ev.target.result);
+      const wb=XLSX.read(data,{type:'array'});
+      workbookData={
+        estudiantes: XLSX.utils.sheet_to_json(wb.Sheets['ESTUDIANTES']||{}),
+        preguntas: XLSX.utils.sheet_to_json(wb.Sheets['PREGUNTAS']||{}),
+        resultados: XLSX.utils.sheet_to_json(wb.Sheets['RESULTADOS']||{}),
+        respuestas: XLSX.utils.sheet_to_json(wb.Sheets['RESPUESTAS']||{}),
+      };
+      if(!workbookData.estudiantes.length || !workbookData.preguntas.length){
+        summaryEl.classList.add('show');
+        summaryEl.textContent='No se encontraron las hojas ESTUDIANTES / PREGUNTAS esperadas en este archivo.';
+        btnUpload.disabled=true;
+        return;
+      }
+      summaryEl.classList.add('show');
+      summaryEl.textContent=`Archivo leído: ${workbookData.estudiantes.length} estudiantes · ${workbookData.preguntas.length} preguntas · ${workbookData.resultados.length} resultados · ${workbookData.respuestas.length} respuestas.`;
+      btnUpload.disabled=false;
+    }catch(err){
+      summaryEl.classList.add('show');
+      summaryEl.textContent='No se pudo leer el archivo: '+err.message;
+    }
+  };
+  reader.readAsArrayBuffer(file);
+});
+
+function chunk(arr, size){
+  const out=[];
+  for(let i=0;i<arr.length;i+=size) out.push(arr.slice(i,i+size));
+  return out;
+}
+
+async function insertChunked(table, rows, label){
+  const chunks=chunk(rows, 500);
+  let done=0;
+  for(const c of chunks){
+    const {error}=await supabaseClient.from(table).insert(c);
+    if(error){ log(`Error insertando ${label}: ${error.message}`, 'err'); throw error; }
+    done+=c.length;
+    log(`${label}: ${done}/${rows.length}…`);
+  }
+}
+
+btnUpload.addEventListener('click', async ()=>{
+  btnUpload.disabled=true;
+  try{
+    await cargarTodo();
+    log('¡Listo! Carga completa.', 'ok');
+    cargarInstituciones();
+  }catch(err){
+    log('Se detuvo la carga por un error. Revisa el mensaje anterior.', 'err');
+  }
+  btnUpload.disabled=false;
+});
+
+async function cargarTodo(){
+  const nombreInstitucion=document.getElementById('institucion').value.trim();
+  const ciudad=document.getElementById('ciudad').value.trim();
+
+  log('Buscando institución "'+nombreInstitucion+'"…');
+  let {data:inst}=await supabaseClient.from('instituciones').select('*').ilike('nombre', nombreInstitucion).maybeSingle();
+  if(!inst){
+    const {data:nueva,error}=await supabaseClient.from('instituciones').insert({nombre:nombreInstitucion, ciudad}).select().single();
+    if(error) throw error;
+    inst=nueva;
+    log('Institución creada.', 'ok');
+  } else {
+    log('Institución existente encontrada.', 'ok');
+  }
+
+  const simNombre=workbookData.preguntas[0].simulacro_nombre;
+  const grados=workbookData.estudiantes.map(e=>String(e.grado));
+  const gradoMasComun=grados.sort((a,b)=>grados.filter(v=>v===a).length-grados.filter(v=>v===b).length).pop();
+  const numSesiones=Math.max(...workbookData.preguntas.map(p=>Number(p.sesion)||1));
+
+  log('Buscando simulacro "'+simNombre+'"…');
+  let {data:sim}=await supabaseClient.from('simulacros').select('*').eq('nombre', simNombre).maybeSingle();
+  if(!sim){
+    const {data:nuevo,error}=await supabaseClient.from('simulacros').insert({
+      nombre:simNombre, grado_aplicable:gradoMasComun,
+      num_preguntas:workbookData.preguntas.length, num_sesiones:numSesiones
+    }).select().single();
+    if(error) throw error;
+    sim=nuevo;
+    log('Simulacro creado.', 'ok');
+  } else {
+    log('Simulacro existente encontrado (se reemplazarán sus preguntas/resultados/respuestas).', 'warn');
+  }
+
+  const filasEstudiantes=workbookData.estudiantes.map(e=>({
+    nombre:e.nombre, codigo_acceso:String(e.codigo_acceso),
+    institucion_id:inst.id, grado:String(e.grado), grupo:String(e.curso)
+  }));
+  log('Subiendo estudiantes…');
+  const {data:estudiantesGuardados,error:errEst}=await supabaseClient
+    .from('estudiantes').upsert(filasEstudiantes,{onConflict:'codigo_acceso'}).select();
+  if(errEst) throw errEst;
+  log(`Estudiantes listos: ${estudiantesGuardados.length}.`, 'ok');
+
+  const codigoToId={};
+  estudiantesGuardados.forEach(e=>codigoToId[e.codigo_acceso]=e.id);
+  const zidToEstudianteId={};
+  workbookData.estudiantes.forEach(e=>{ zidToEstudianteId[e.zipgrade_id]=codigoToId[String(e.codigo_acceso)]; });
+
+  log('Reemplazando preguntas del simulacro…');
+  await supabaseClient.from('preguntas').delete().eq('simulacro_id', sim.id);
+  const filasPreguntas=workbookData.preguntas.map(p=>({
+    simulacro_id:sim.id, numero:p.numero, area:p.area, competencia:p.competencia,
+    componente:p.componente, nivel:p.nivel, respuesta_correcta:p.respuesta_correcta,
+    simulacro_nombre:p.simulacro_nombre, sesion:p.sesion, pregunta_codigo:p.pregunta_codigo,
+    habilidad_evaluada:p.habilidad_evaluada, area_corta:p.area_corta
+  }));
+  await insertChunked('preguntas', filasPreguntas, 'Preguntas');
+
+  log('Reemplazando resultados por estudiante…');
+  await supabaseClient.from('resultados_estudiante').delete().eq('simulacro_id', sim.id);
+  const filasResultados=workbookData.resultados.map(r=>({
+    estudiante_id:zidToEstudianteId[r.zipgrade_id], simulacro_id:sim.id,
+    curso:r.curso, aciertos_totales:r.aciertos_totales, porcentaje_global:r.porcentaje_global,
+    puntaje_global:r.puntaje_global, nivel_global:r.nivel_global,
+    mat_pct:r.mat_pct, lec_pct:r.lec_pct, soc_pct:r.soc_pct, cn_pct:r.cn_pct, ing_pct:r.ing_pct,
+    nivel_mat:r.nivel_mat, nivel_lec:r.nivel_lec, nivel_soc:r.nivel_soc, nivel_cn:r.nivel_cn, nivel_ing:r.nivel_ing,
+    area_fuerte:r.area_fuerte, area_fuerte_pct:r.area_fuerte_pct,
+    area_critica:r.area_critica, area_critica_pct:r.area_critica_pct,
+    fortaleza:r.fortaleza, debilidad:r.debilidad, recomendacion:r.recomendacion,
+    clasificacion_general:r.clasificacion_general
+  })).filter(r=>r.estudiante_id);
+  await insertChunked('resultados_estudiante', filasResultados, 'Resultados');
+
+  log('Reemplazando respuestas (esto tarda un poco más)…');
+  await supabaseClient.from('respuestas_estudiante').delete().eq('simulacro_id', sim.id);
+  const filasRespuestas=workbookData.respuestas.map(r=>({
+    estudiante_id:zidToEstudianteId[r.zipgrade_id], simulacro_id:sim.id,
+    pregunta_codigo:r.pregunta_codigo, respuesta_marcada:r.respuesta_marcada||null,
+    es_correcta:!!r.es_correcta
+  })).filter(r=>r.estudiante_id);
+  await insertChunked('respuestas_estudiante', filasRespuestas, 'Respuestas');
+}
+
+cargarInstituciones().then(cargarUsuarios);
+</script>
+</body>
+</html>
